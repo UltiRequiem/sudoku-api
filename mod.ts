@@ -1,17 +1,52 @@
+import {
+  serve,
+  type Handler,
+} from "https://deno.land/std@0.132.0/http/server.ts";
+
+import { solveSudoku } from "./sudoku.ts";
+
 const { href: workerPath } = new URL("./worker.ts", import.meta.url);
 
-const worker = new Worker(workerPath, { type: "module" });
+const workerPool = Array.from(
+  { length: 5 },
+  () => new Worker(workerPath, { type: "module" })
+);
 
-const sudoku = new Uint8Array([
-  5, 3, 0, 0, 7, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 8, 0, 0, 0, 0, 6,
-  0, 8, 0, 0, 0, 6, 0, 0, 0, 3, 4, 0, 0, 8, 0, 3, 0, 0, 1, 7, 0, 0, 0, 2, 0, 0,
-  0, 6, 0, 6, 0, 0, 0, 0, 2, 8, 0, 0, 0, 0, 4, 1, 9, 0, 0, 5, 0, 0, 0, 0, 8, 0,
-  0, 7, 9,
-]);
+function onload(worker: Worker) {
+  return new Promise((resolve) => {
+    worker.onmessage = (event) => {
+      resolve(event.data);
+    };
+  });
+}
 
-worker.postMessage(sudoku);
+type waitlist = (worker: Worker) => void;
+const waitingList: waitlist[] = [];
 
-worker.onmessage = (event) => {
-  const { data } = event;
-  console.log(data);
+const handler: Handler = async (request) => {
+  if (!request.body) {
+    return new Response("Send body Please");
+  }
+
+  const data = request.body 
+
+  return new Response("Hey", { status: 200 });
 };
+
+async function handleWithWorker(sudokuData: ReadableStream, worker: Worker) {
+  worker.postMessage(sudokuData);
+
+  const result = await onload(worker);
+
+  if (waitingList && waitingList.length > 0) {
+    waitingList.shift()!(worker);
+  } else {
+    workerPool.push(worker);
+  }
+
+  return result;
+}
+
+const port = 8080;
+
+await serve(handler, { port });
