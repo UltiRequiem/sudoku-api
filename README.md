@@ -1,0 +1,3 @@
+# Sudoku API
+
+Practicing TS, workers, etc...
